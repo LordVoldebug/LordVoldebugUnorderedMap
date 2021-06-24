@@ -17,19 +17,19 @@
  */
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
-  public:
+public:
     constexpr static size_t kMinLoad = 3;
-    constexpr static size_t kMinLoadFactor = 2;
+    constexpr static size_t kMinLoadFactor = 3;
     constexpr static size_t kMaxLoadFactor = 2;
 
     using KeyValuePair = typename std::pair<KeyType, ValueType>;
     using KeyValuePairConstKey = typename std::pair<const KeyType, ValueType>;
-  public:
+public:
     // In both const and regular iterator we store position in array with key-value pairs.
     // Complexity: O(1) guaranteed for each in-class operation.
     class iterator {
         friend HashMap;
-      public:
+    public:
         iterator() = default;
 
         iterator& operator++() {
@@ -38,8 +38,9 @@ class HashMap {
         }
 
         iterator operator++(int) {
+            size_t old_data_position = data_position_;
             ++data_position_;
-            return iterator(hash_map_link_, static_cast<size_t>(data_position_ - 1));
+            return iterator(hash_map_link_, old_data_position);
         }
 
         bool operator==(const iterator& other) const {
@@ -58,11 +59,11 @@ class HashMap {
             return reinterpret_cast<KeyValuePairConstKey*>(&hash_map_link_->data_[data_position_]);
         }
 
-      private:
+    private:
         iterator(HashMap<KeyType, ValueType, Hash>* hash_map_link_, size_t data_position__) :
-            hash_map_link_(hash_map_link_), data_position_(data_position__) {}
+                hash_map_link_(hash_map_link_), data_position_(data_position__) {}
 
-      private:
+    private:
         HashMap<KeyType, ValueType, Hash>* hash_map_link_;
         size_t data_position_;
     };
@@ -86,7 +87,7 @@ class HashMap {
     // Complexity: O(1) guaranteed for  each in-class operation.
     class const_iterator {
         friend HashMap;
-      public:
+    public:
         const_iterator() = default;
 
         bool operator==(const const_iterator& other) const {
@@ -111,21 +112,22 @@ class HashMap {
         }
 
         const_iterator operator++(int) {
+            size_t old_data_position = data_position_;
             ++data_position_;
-            return const_iterator(hash_map_link_, static_cast<size_t>(data_position_ - 1));
+            return const_iterator(hash_map_link_, old_data_position);
         }
 
-      private:
+    private:
         const_iterator(const HashMap<KeyType, ValueType, Hash>* hash_map_link_,
                        const size_t data_position__) : hash_map_link_(hash_map_link_),
                                                        data_position_(data_position__) {}
 
-      private:
+    private:
         const HashMap<KeyType, ValueType, Hash>* hash_map_link_;
         size_t data_position_;
     };
 
-  public:
+public:
 
     // Complexity: O(1) guaranteed.
     const_iterator begin() const {
@@ -250,7 +252,7 @@ class HashMap {
         throw std::out_of_range("Element not in HashTable.");
     }
 
-  private:
+private:
     // Calculates position of bucket of hash table, where element with key = Key belongs.
     size_t GetHashTableBucket(const KeyType& key) const {
         return hasher_(key) % hash_table_.size();
@@ -307,7 +309,7 @@ class HashMap {
         return end();
     }
 
-  private:
+private:
     std::vector<std::vector<size_t>> hash_table_;
     std::vector<KeyValuePair> data_;
     Hash hasher_;
