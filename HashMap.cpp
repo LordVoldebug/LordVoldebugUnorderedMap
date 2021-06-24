@@ -1,226 +1,314 @@
 #include <algorithm>
+#include <initializer_list>
 #include <stdexcept>
 #include <vector>
 
+/*
+ * Implementation of hash map using seperate chaining with dynamic arrays (vectors) and linear probing.
+ * Iteration over elements of hash map is linear as we store all elements in a separate array
+ * over which we can simply iterate.
+ * In hash_table we store only indexes of elements of this array.
+ * More information can be found at https://en.wikipedia.org/wiki/Hash_table.
+ * O(1) average time complexity is achived by maintaining the invariant that:
+ * kMinLoadFactor < # of buckets in hash table / # of elements in hash map < 1/kMaxLoadFactor
+ * More precisely, invariant above holds only if # of elements in hash map >= kMinLoad;
+ * otherwise we store kMinLoad buckets.
+ * To achieve this we resize our hash table each time this invariant breaks.
+ */
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
-private:
-    using hash_pair = typename std::pair<KeyType, ValueType>;
+  public:
+    constexpr static size_t kMinLoad = 3;
+    constexpr static size_t kMinLoadFactor = 2;
+    constexpr static size_t kMaxLoadFactor = 2;
 
-    std::vector<std::vector<size_t>> hash_table;
-    std::vector<hash_pair> els;
-
-    Hash hasher;
-
-    void rehash() {
-        if (hash_table.size() <= els.size() || els.size() * 4 + 1 < hash_table.size()) {
-            hash_table.clear();
-            hash_table.resize(els.size() * 2 + 1);
-            for (size_t ind = 0; ind < els.size(); ++ind) {
-                hash_table[hasher(els[ind].first) % hash_table.size()].push_back(ind);
-            }
-        }
-    }
-
-public:
-
+    using KeyValuePair = typename std::pair<KeyType, ValueType>;
+    using KeyValuePairConstKey = typename std::pair<const KeyType, ValueType>;
+  public:
+    // In both const and regular iterator we store position in array with key-value pairs.
+    // Complexity: O(1) guaranteed for each in-class operation.
     class iterator {
         friend HashMap;
-    private:
-        HashMap<KeyType, ValueType, Hash> *link;
-        size_t pos;
-
-        iterator(HashMap<KeyType, ValueType, Hash> *link_, size_t pos_) : link(link_), pos(pos_) {}
-
-    public:
-        iterator() {}
+      public:
+        iterator() = default;
 
         iterator& operator++() {
-            ++pos;
+            ++data_position_;
             return *this;
         }
 
         iterator operator++(int) {
-            ++pos;
-            return iterator(this->link, pos - 1);
+            ++data_position_;
+            return iterator(hash_map_link_, static_cast<size_t>(data_position_ - 1));
         }
 
         bool operator==(const iterator& other) const {
-            return other.pos == pos;
+            return other.data_position_ == data_position_;
         }
 
         bool operator!=(const iterator& other) const {
-            return other.pos != pos;
+            return other.data_position_ != data_position_;
         }
 
-        std::pair<const KeyType, ValueType>& operator*() {
-            return *(std::pair<const KeyType, ValueType> *) (&link->els[pos]);
+        KeyValuePair& operator*() {
+            return *reinterpret_cast<KeyValuePair *>(&hash_map_link_->data_[data_position_]);
         }
 
-        std::pair<const KeyType, ValueType> *operator->() {
-            return (std::pair<const KeyType, ValueType> *) (&link->els[pos]);
+        KeyValuePairConstKey* operator->() {
+            return reinterpret_cast<KeyValuePairConstKey *>(&hash_map_link_->data_[data_position_]);
         }
+
+      private:
+        iterator(HashMap<KeyType, ValueType, Hash>* hash_map_link_, size_t data_position__) :
+            hash_map_link_(hash_map_link_), data_position_(data_position__) {}
+
+      private:
+        HashMap<KeyType, ValueType, Hash>* hash_map_link_;
+        size_t data_position_;
     };
 
-    class const_iterator {
-        friend HashMap;
-    private:
-        const HashMap<KeyType, ValueType, Hash> *link;
-        size_t pos;
-
-        const_iterator(const HashMap<KeyType, ValueType, Hash> *link_, const size_t pos_) : link(link_), pos(pos_) {}
-
-    public:
-        const_iterator() {}
-
-
-        bool operator==(const const_iterator& other) const {
-            return other.pos == pos;
-        }
-
-        bool operator!=(const const_iterator& other) const {
-            return other.pos != pos;
-        }
-
-        const hash_pair& operator*() {
-            return link->els[pos];
-        }
-
-        const hash_pair *operator->() {
-            return &link->els[pos];
-        }
-
-        const_iterator& operator++() {
-            ++pos;
-            return *this;
-        }
-
-        const_iterator operator++(int) {
-            ++pos;
-            return const_iterator(this->link, pos - 1);
-        }
-    };
-
-    HashMap(const Hash& hasher_ = Hash()) : hasher(hasher_) {
-        rehash();
-    }
-
-    size_t size() const {
-        return els.size();
-    }
-
-    bool empty() const {
-        return els.size() == 0;
-    }
-
-    Hash hash_function() const {
-        return hasher;
-    }
-
-    void clear() {
-        els.clear();
-        rehash();
-    }
-
+    // O(1) guaranteed.
     iterator begin() {
         return iterator(this, 0);
     }
 
+    // Complexity: O(1) guaranteed.
     iterator end() {
-        return iterator(this, els.size());
+        return iterator(this, data_.size());
     }
 
+    // Complexity: O(1) average case.
+    iterator find(const KeyType& key) {
+        return FindByHashTableBucket(GetHashTableBucket(key), key);
+    }
+
+    // Code bellow is practically the same as code for regular iterator.
+    // Complexity: O(1) guaranteed for  each in-class operation.
+    class const_iterator {
+        friend HashMap;
+      public:
+        const_iterator() = default;
+
+        bool operator==(const const_iterator& other) const {
+            return other.data_position_ == data_position_;
+        }
+
+        bool operator!=(const const_iterator& other) const {
+            return other.data_position_ != data_position_;
+        }
+
+        const KeyValuePair& operator*() {
+            return hash_map_link_->data_[data_position_];
+        }
+
+        const KeyValuePair* operator->() {
+            return &hash_map_link_->data_[data_position_];
+        }
+
+        const_iterator& operator++() {
+            ++data_position_;
+            return *this;
+        }
+
+        const_iterator operator++(int) {
+            ++data_position_;
+            return const_iterator(hash_map_link_, static_cast<size_t>(data_position_ - 1));
+        }
+
+      private:
+        const_iterator(const HashMap<KeyType, ValueType, Hash>* hash_map_link_,
+                       const size_t data_position__) : hash_map_link_(hash_map_link_),
+                                                       data_position_(data_position__) {}
+
+      private:
+        const HashMap<KeyType, ValueType, Hash>* hash_map_link_;
+        size_t data_position_;
+    };
+
+  public:
+
+    // Complexity: O(1) guaranteed.
     const_iterator begin() const {
         return const_iterator(this, 0);
     }
 
+    // Complexity: O(1) guaranteed.
     const_iterator end() const {
-        return const_iterator(this, els.size());
+        return const_iterator(this, data_.size());
     }
 
-    iterator find(const KeyType& key) {
-        size_t index = hasher(key) % hash_table.size();
-        for (auto ind : hash_table[index]) {
-            if (els[ind].first == key) {
-                return iterator(this, ind);
-            }
-        }
-        return end();
-    }
-
+    // Complexity: O(1) average.
     const_iterator find(const KeyType& key) const {
-        size_t index = hasher(key) % hash_table.size();
-        for (auto ind : hash_table[index]) {
-            if (els[ind].first == key) {
-                return const_iterator(this, ind);
-            }
-        }
-        return end();
+        return FindByHashTableBucket(GetHashTableBucket(key), key);
     }
 
-    void insert(const hash_pair& elem) {
-        auto it = find(elem.first);
-        if (it != end()) {
-            return;
-        }
-        size_t index = hasher(elem.first) % hash_table.size();
-        hash_table[index].push_back(els.size());
-        els.push_back(elem);
-        rehash();
+    // Complexity: O(1) guaranteed.
+    HashMap(const Hash& hasher_ = Hash()) : hasher_(hasher_) {
+        RehashIfNecessary();
     }
 
-
+    // Complexity: O(end - begin) guaranteed, where end - begin = # of elements within range.
     template<class Iter>
-    HashMap(Iter begin, Iter end, const Hash& hasher_ = Hash()): hasher(hasher_) {
-        rehash();
+    HashMap(Iter begin, Iter end, const Hash& hasher_ = Hash()): hasher_(hasher_) {
+        RehashIfNecessary();
         for (Iter cur = begin; cur != end; ++cur) {
             insert(*cur);
         }
-        rehash();
     }
 
-    HashMap(const std::initializer_list<hash_pair>& list,
-            const Hash& hasher_ = Hash()) : hasher(hasher_) {
-        rehash();
-        for (auto el : list) {
-            insert(el);
+    // Complexity: O(# of elements in initializer_list) guaranteed.
+    HashMap(const std::initializer_list<KeyValuePair>& init_list,
+            const Hash& hasher_ = Hash()) :
+            hasher_(hasher_) {
+        RehashIfNecessary();
+        for (const KeyValuePair& element : init_list) {
+            insert(element);
         }
-        rehash();
     }
 
-    void erase(const KeyType& key) {
-        auto it = find(key);
-        if (it == end()) {
+    // Complexity: O(1) guaranteed.
+    Hash hash_function() const {
+        return hasher_;
+    }
+
+    // Complexity: O(1) guaranteed.
+    size_t size() const {
+        return data_.size();
+    }
+
+    // Complexity: O(1) guaranteed.
+    bool empty() const {
+        return data_.empty();
+    }
+
+    // Complexity: O(# of elements in hash map) guaranteed.
+    void clear() {
+        data_.clear();
+        RehashIfNecessary();
+    }
+
+    // Complexity: O(1) average case.
+    // Inserts new element and resizes hash table if this is neccesary.
+    void insert(const KeyValuePair& elem) {
+        size_t hash_table_key_position = GetHashTableBucket(elem.first);
+        iterator key_iterator = FindByHashTableBucket(hash_table_key_position, elem.first);
+        if (key_iterator != end()) {
             return;
         }
-        size_t id = it.pos;
-        size_t index = hasher(key) % hash_table.size();
-        hash_table[index].erase(std::find(hash_table[index].begin(), hash_table[index].end(), id));
-        size_t hsh = hasher(els.back().first) % hash_table.size();
-        for (auto& el : hash_table[hsh]) {
-            if (el + 1 == els.size()) {
-                el = id;
+        hash_table_[hash_table_key_position].push_back(data_.size());
+        data_.push_back(elem);
+        RehashIfNecessary();
+    }
+
+    // Complexity: O(1) average case.
+    // Algorithm:
+    // 1) Swap element with the last element in the storage array.
+    // 2) Remove last element from the array.
+    // 3) Update hash table according to changes made with the storage array.
+    void erase(const KeyType& key) {
+        size_t hash_table_key_bucket = GetHashTableBucket(key);
+        iterator key_iterator = FindByHashTableBucket(hash_table_key_bucket, key);
+        if (key_iterator == end()) {
+            return;
+        }
+        size_t key_data_position = key_iterator.data_position_;
+        auto bucket_key_position = std::find(hash_table_[hash_table_key_bucket].begin(),
+                                             hash_table_[hash_table_key_bucket].end(), key_data_position);
+        hash_table_[hash_table_key_bucket].erase(bucket_key_position);
+        size_t last_element_bucket = GetHashTableBucket(data_.back().first);
+
+        std::swap(data_[key_data_position], data_.back());
+        data_.pop_back();
+
+        auto last_element_bucket_position = std::find(hash_table_[last_element_bucket].begin(),
+                                                      hash_table_[last_element_bucket].end(),
+                                                      data_.size());
+        *last_element_bucket_position = key_data_position;
+
+        RehashIfNecessary();
+    }
+
+    // Return element of hash map with Key == key if it exists.
+    // Otherwise create element with Key = key and Value set with default value of Valuetype
+    // Complexity: O(1) average case
+    ValueType& operator[](const KeyType& key) {
+        iterator key_iterator = find(key);
+
+        if (key_iterator == end()) {
+            insert(std::make_pair(key, ValueType()));
+            key_iterator = find(key);
+        }
+        return key_iterator->second;
+    }
+
+    // Complexity: O(1) guaranteed.
+    const ValueType& at(const KeyType& key) const {
+        const_iterator key_iterator = find(key);
+        if (key_iterator != end()) {
+            return key_iterator->second;
+        }
+        throw std::out_of_range("Element not in HashTable.");
+    }
+
+  private:
+    // Calculates position of bucket of hash table, where element with key = Key belongs.
+    size_t GetHashTableBucket(const KeyType& key) const {
+        return hasher_(key) % hash_table_.size();
+    }
+
+    // Checks where resize of hash table is necessary and resizes it accordingly.
+    // Complexity: O(1) average is achived by maintaining the invariant that:
+    // kMinLoadFactor < # of buckets in hash table / # of elements in hash map < 1/kMaxLoadFactor
+    // More precisely, invariant above holds only if # of elements in hash map >= kMinLoad;
+    // otherwise we store kMinLoad buckets.
+    // Also used for initialization.
+    void RehashIfNecessary() {
+        if (hash_table_.empty()) {
+            hash_table_.resize(kMinLoad);
+            return;
+        }
+        if (hash_table_.size() * kMaxLoadFactor < data_.size() ||
+            data_.size() * kMinLoadFactor < hash_table_.size()) {
+
+            size_t new_size = std::max(data_.size(), static_cast<size_t>(kMinLoad));
+            if (hash_table_.size() == new_size) {
+                return;
+            }
+
+            hash_table_.clear();
+            hash_table_.resize(new_size);
+
+            for (size_t ind = 0; ind < data_.size(); ++ind) {
+                size_t hash_table_position = GetHashTableBucket(data_[ind].first);
+                hash_table_[hash_table_position].push_back(ind);
             }
         }
-        std::swap(els[id], els.back());
-        els.pop_back();
-        rehash();
     }
 
-    ValueType& operator[](const KeyType& key) {
-        if (find(key) == end()) {
-            insert(std::make_pair(key, ValueType()));
-            rehash();
+    // Finds iterator that has key == Key when bucket where element with key = Key is given.
+    // Complexity: O(1) average case.
+    iterator FindByHashTableBucket(const size_t hash_table_key_bucket, const KeyType& key) {
+        for (size_t data_index : hash_table_[hash_table_key_bucket]) {
+            if (data_[data_index].first == key) {
+                return iterator(this, data_index);
+            }
         }
-        auto it = find(key);
-        return els[it.pos].second;
+        return end();
     }
 
-    const ValueType& at(const KeyType& key) const {
-        auto it = find(key);
-        if (it != end()) {
-            return els[it.pos].second;
+    // Finds iterator that has key == Key when bucket where element with key = Key is given.
+    // Complexity: O(1) average case.
+    const_iterator FindByHashTableBucket(const size_t hash_table_key_bucket, const KeyType& key) const {
+        for (size_t data_index : hash_table_[hash_table_key_bucket]) {
+            if (data_[data_index].first == key) {
+                return const_iterator(this, data_index);
+            }
         }
-        throw std::out_of_range("At Error");
+        return end();
     }
+
+  private:
+    std::vector<std::vector<size_t>> hash_table_;
+    std::vector<KeyValuePair> data_;
+    Hash hasher_;
 };
