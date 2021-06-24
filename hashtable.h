@@ -51,11 +51,11 @@ class HashMap {
         }
 
         KeyValuePair& operator*() {
-            return *reinterpret_cast<KeyValuePair *>(&hash_map_link_->data_[data_position_]);
+            return *reinterpret_cast<KeyValuePair*>(&hash_map_link_->data_[data_position_]);
         }
 
         KeyValuePairConstKey* operator->() {
-            return reinterpret_cast<KeyValuePairConstKey *>(&hash_map_link_->data_[data_position_]);
+            return reinterpret_cast<KeyValuePairConstKey*>(&hash_map_link_->data_[data_position_]);
         }
 
       private:
