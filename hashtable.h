@@ -30,7 +30,7 @@ class HashMap {
 
 
   public:
-    // In both const and regular iterator we store iterator in a vector with key-value pairs.
+    // In both const and regular iterator we store iterator in array with key-value pairs.
     // Complexity: O(1) guaranteed for each in-class operation.
     class iterator {
         friend HashMap;
@@ -38,37 +38,37 @@ class HashMap {
         iterator() = default;
 
         iterator& operator++() {
-            ++position;
+            ++position_;
             return *this;
         }
 
         iterator operator++(int) {
-            DataIterator old_position = position;
-            ++position;
+            DataIterator old_position = position_;
+            ++position_;
             return iterator(old_position);
         }
 
         bool operator==(const iterator& other) const {
-            return position == other.position;
+            return position_ == other.position_;
         }
 
         bool operator!=(const iterator& other) const {
-            return position != other.position;
+            return position_ != other.position_;
         }
 
         KeyValuePair& operator*() {
-            return *position;
+            return *position_;
         }
 
         KeyValuePairConstKey *operator->() {
-            return reinterpret_cast<KeyValuePairConstKey*>(&(*position));
+            return reinterpret_cast<KeyValuePairConstKey*>(&(*position_));
         }
 
       private:
-        iterator(DataIterator position) : position(position) {}
+        iterator(DataIterator position_) : position_(position_) {}
 
       private:
-        DataIterator position;
+        DataIterator position_;
     };
 
     // O(1) guaranteed.
@@ -94,37 +94,37 @@ class HashMap {
         const_iterator() = default;
 
         const_iterator& operator++() {
-            ++position;
+            ++position_;
             return *this;
         }
 
         const_iterator operator++(int) {
-            DataConstIterator old_position = position;
-            ++position;
+            DataConstIterator old_position = position_;
+            ++position_;
             return const_iterator(old_position);
         }
 
         bool operator==(const const_iterator& other) const {
-            return position == other.position;
+            return position_ == other.position_;
         }
 
         bool operator!=(const const_iterator& other) const {
-            return position != other.position;
+            return position_ != other.position_;
         }
 
         const KeyValuePair& operator*() {
-            return *position;
+            return *position_;
         }
 
         const KeyValuePair *operator->() {
-            return (&(*position));
+            return (&(*position_));
         }
 
       private:
-        const_iterator(const DataConstIterator position) : position(position) {}
+        const_iterator(const DataConstIterator position_) : position_(position_) {}
 
       private:
-        DataConstIterator position;
+        DataConstIterator position_;
     };
 
     // Complexity: O(1) guaranteed.
@@ -261,7 +261,7 @@ class HashMap {
     // Returns index in data_ array, that corresponds to the given iterator.
     // Complexity: O(1) guaranteed.
     size_t GetDataPosition(const iterator& it){
-        return it.position - begin().position;
+        return it.position_ - begin().position_;
     }
 
     // Calculates position of bucket of hash table, where element with key = Key belongs.
